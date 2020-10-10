@@ -18,14 +18,14 @@ using namespace std;
 
 class ClientHandler{
     public:
-    ClientHandler(int socket, mutex *m, mutex *m0, queue <pair <int, char*> > *qData, queue <int> *qDeactivate, int messageSize=256, float timeout_usec=5000000, int minMessageLength=7){
+    ClientHandler(int socket, mutex *m, mutex *m0, queue <pair <int, char*> > *qData, queue <int> *qDeactivate, int messageSize=256, float timeout_usec=5000000, int nameSize=6){
         this->running = false;
         this->fd = socket;
         this->clientMessage = (char*)calloc(messageSize, sizeof(char));
         this->t = NULL;
         this->timeout = timeout_usec;
         this->msgSize = messageSize;
-        this->minMsgLength = minMessageLength;
+        this->nameLength = nameSize;
         this->mtx = m;
         this->mtx0 = m0;
         this->data = qData;
@@ -39,10 +39,10 @@ class ClientHandler{
                 deactivate();
                 return;
             }
-            if(recv(this->fd , this->clientMessage , messageSize , 0) >= this->minMsgLength)  if(this->clientMessage[0] == '$') break;
+            if(recv(this->fd , this->clientMessage , messageSize , 0) >= this->nameLength)  if(this->clientMessage[0] == '$') break;
         }
         char temp[30]; strcpy(temp, "Hello, ");
-        char name[10]; strncpy(name, this->clientMessage+1, this->minMsgLength);
+        char name[10]; strncpy(name, this->clientMessage+1, this->nameLength);
         strcat(temp, name); send(this->fd, temp, sizeof(temp), 0);
         this->t = new thread(&ClientHandler::run, this);
     }
@@ -71,7 +71,7 @@ class ClientHandler{
     }
     
     private:
-    int fd, msgSize, minMsgLength;
+    int fd, msgSize, nameLength;
     float timeout;
     bool running, on;
     char *clientMessage;
@@ -84,8 +84,8 @@ class ClientHandler{
     void run(){
         this->running = true;
         this->on = true;
-        char name[this->minMsgLength+1]; strncpy(name, this->clientMessage+1, this->minMsgLength);
-        char sMsg[this->minMsgLength+15] = "Received, ";
+        char name[this->nameLength+1]; strncpy(name, this->clientMessage+1, this->nameLength);
+        char sMsg[this->nameLength+15] = "Received, ";
         strcat(sMsg, name);
         struct timeval s, e;
         gettimeofday(&s, NULL);
@@ -97,7 +97,7 @@ class ClientHandler{
                 break;
             }
             // printf("TCPServer:: client %d receiving\n", this->fd);
-            if(recv(this->fd , this->clientMessage , this->msgSize , 0) < this->minMsgLength) continue;
+            if(recv(this->fd , this->clientMessage , this->msgSize , 0) < this->nameLength) continue;
             if(this->clientMessage[0] != '$') continue;
             gettimeofday(&s, NULL);
             if(send(this->fd, sMsg, sizeof(sMsg), 0) < 1) continue;
@@ -121,12 +121,12 @@ class ClientHandler{
 
 class TCPServer{
     public:
-    TCPServer(int port, int timeout_usec=5000000){
+    TCPServer(char *ip, int port, int timeout_usec=5000000){
         struct sockaddr_in serverAddr;
         serverSocket = socket(AF_INET, SOCK_STREAM, 0);
         serverAddr.sin_family = AF_INET;
         serverAddr.sin_port = htons(port);
-        serverAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+        serverAddr.sin_addr.s_addr = inet_addr(ip);
         memset(serverAddr.sin_zero, '\0', sizeof serverAddr.sin_zero);
         this->timeout = timeout_usec;
         struct timeval timeoutTemp;
@@ -207,7 +207,7 @@ class TCPServer{
     queue <int> deactivateClient;
 
     void run(){
-        int fd, i;
+        int fd;
         struct sockaddr_storage serverStorage;
         socklen_t addr_size;
         this->on = true;
