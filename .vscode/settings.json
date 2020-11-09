@@ -2,6 +2,21 @@
     "files.associations": {
         "thread": "cpp",
         "condition_variable": "cpp",
-        "system_error": "cpp"
+        "system_error": "cpp",
+        "queue": "cpp",
+        "iostream": "cpp",
+        "ostream": "cpp",
+        "array": "cpp",
+        "chrono": "cpp",
+        "functional": "cpp",
+        "ratio": "cpp",
+        "tuple": "cpp",
+        "type_traits": "cpp",
+        "utility": "cpp",
+        "istream": "cpp",
+        "string": "cpp",
+        "*.tcc": "cpp",
+        "typeinfo": "cpp",
+        "mutex": "cpp"
     }
 }
