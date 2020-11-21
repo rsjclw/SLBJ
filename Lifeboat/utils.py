@@ -16,9 +16,22 @@ import os
 import cv2
 from heapq import heappop, heappush
 from math import sin, cos, sqrt, atan2, asin, acos
+from PyQt5.QtGui import QImage, QPixmap
+from cv2 import resize, cvtColor, COLOR_BGR2RGB, VideoCapture, COLOR_GRAY2BGR,imwrite, imshow
+from numpy import zeros, uint8
 
 def degree2rad(x): return x*0.017453292519943295
 def rad2Degree(x): return x*57.29577951308232
+
+def convertToQPixmap(img):
+    shape = img.shape
+    try:
+        img = cvtColor(img, COLOR_BGR2RGB)
+        img = QImage(img.data, img.shape[1], img.shape[0], img.strides[0], QImage.Format_RGB888)
+    except:
+        img = zeros(shape, dtype=uint8)
+        img = QImage(img.data, img.shape[1], img.shape[0], img.strides[0], QImage.Format_RGB888)
+    return QPixmap.fromImage(img)
 
 def getAngularDistance(lat0, lon0, lat1, lon1):
     sDLat = sin((lat1-lat0)/2.0)
@@ -60,19 +73,24 @@ class Control:
         self.headingController = PIDControl(PIDCutoffHeading[0], PIDCutoffHeading[1], PIDCutoffHeading[2], PIDCutoffHeading[3])
         self.distanceThreshold = distanceThreshold
         self.isSet = False
+        self.arrived = True
     
     def setControlPoint(self, initLat, initLon, destLat, destLon):
-        self.lat0 = degree2rad(initLat)
-        self.lon0 = degree2rad(initLon)
-        self.lat1 = degree2rad(destLat)
-        self.lon1 = degree2rad(destLon)
-        self.initBearing = getBearing(self.lat0, self.lon0, self.lat1, self.lon1)
-        self.sInitBearing = sin(self.initBearing)
-        self.cInitBearing = cos(self.initBearing)
-        self.sLat0 = sin(self.lat0)
-        self.cLat0 = cos(self.lat0)
-        self.arrived = False
-        self.isSet = True
+        try:
+            self.lat0 = degree2rad(initLat)
+            self.lon0 = degree2rad(initLon)
+            self.lat1 = degree2rad(destLat)
+            self.lon1 = degree2rad(destLon)
+            self.initBearing = getBearing(self.lat0, self.lon0, self.lat1, self.lon1)
+            self.sInitBearing = sin(self.initBearing)
+            self.cInitBearing = cos(self.initBearing)
+            self.sLat0 = sin(self.lat0)
+            self.cLat0 = cos(self.lat0)
+            self.isSet = True
+            self.arrived = False
+        except:
+            self.isSet = False
+            self.arrived = True
     
     def __normalizeHeading(self, angle):
         return (angle+360)%360
@@ -119,6 +137,7 @@ class Control:
     def isArrived(self):
         return self.arrived
 
+from cv2 import imread, waitKey
 class Globe:
     # Load the data from file.
     def __init__(self, map_path):
@@ -133,19 +152,25 @@ class Globe:
         # np.savez_compressed("worldmap.npz", mask=self.mask, latMax=self.LATMAX, lonMax=179.99166666666667, latMin=-89.99166666666667, lonMin=self.LONMIN, latLen=21600, lonLen=43200)
 
         _mask_fid = np.load(map_path)
-        self.mask = _mask_fid['mask']
+
+        self.mask = _mask_fid['mask'].astype(np.uint8)
         self.LATMAX = _mask_fid['latMax']
         self.LONMIN = _mask_fid['lonMin']
         self.LATMAXIDX = _mask_fid['latLen']
         self.LONMAXIDX = _mask_fid['lonLen']
         self.DLAT = -(_mask_fid['latMax']-_mask_fid['latMin'])/(_mask_fid['latLen']-1)
         self.DLON = (_mask_fid['lonMax']-_mask_fid['lonMin'])/(_mask_fid['lonLen']-1)
+        self.on = False
+        # np.savez_compressed("danau8map1.npz", mask=np.array(_mask_fid['mask'], np.bool), latMax=_mask_fid['latMax'], lonMax=_mask_fid['lonMax'], latMin=_mask_fid['latMin'], lonMin=_mask_fid['lonMin'], latLen=_mask_fid['latLen'], lonLen=_mask_fid['lonLen'])
+        
+    def getMapMask(self, mapMask):
+        mapMask = self.mask
 
     def latToIndex(self, lat):
-        return (int)((lat-self.LATMAX)/self.DLAT)
+        return (int((lat-self.LATMAX)/self.DLAT))%self.LATMAXIDX
 
     def lonToIndex(self, lon):
-        return (int)((lon-self.LONMIN)/self.DLON)
+        return (int((lon-self.LONMIN)/self.DLON))%self.LONMAXIDX
 
     def latIndextoLat(self, latIndex):
         return latIndex*self.DLAT+self.LATMAX
@@ -190,8 +215,9 @@ class Globe:
         lonIdx = self.lonToIndex(lon)
         heappush(heap, (0, latIdx, lonIdx))
         visited[(latIdx, lonIdx)] = True
-        print("searching")
-        while(len(heap) > 0):
+        self.on = True
+        # print("searching")
+        while(len(heap) > 0) and self.on:
             node = heappop(heap)
             cd = node[0]
             latIdx = node[1]
@@ -228,37 +254,52 @@ class Globe:
                     heappush(heap, (d, latIdx, lonIdx))
             
             # print(cd)
-        return None
-
-# from time import sleep
-# if __name__ == "__main__":
-#     c = Control([1.5,0,1,4], [1.5,0,1,4])
-#     c.setControlPoint(-7.286276, 112.795992, -7.286410, 112.796010)
-#     c.control(-7.286345, 112.796017, 180) # -7.286352, 112.795988
-#     # 33.1234789, 123.1234567 // laut
-#     # -6.533850, 106.800901 // darat
-#     print("gukguk")
-#     latIdx0 = lat_to_index(-6.533850)
-#     latIdx1 = latToIndex(-6.533850)
-#     lonIdx0 = lon_to_index(106.800901)
-#     lonIdx1 = lonToIndex(106.800901)
-#     # print("converting")
-#     _mask = np.array(_mask, dtype=np.uint8)
-#     # print("saving")
-#     # cv2.imwrite("mapmask.png", _mask)
-#     print("reading")
-#     imagemask = cv2.imread("mapmask.png", cv2.IMREAD_UNCHANGED)
-#     sleep(3)
-#     print("checking")
-#     print(np.array_equal(imagemask, _mask))
+        return None, None
     
-#     # print(latIndextoLat(latIdx0), lonIndextoLon(lonIdx1))
+    def stop(self):
+        self.on = False
 
-#     # print("lat min: {}, lon min: {}".format(self.lat.min(), self.lon.min()))
-#     # print("self.latMax: {}, lon max: {}".format(self.lat.max(), self.lon.max()))
-#     # print("lat0: {}, lon0: {}".format(self.lat[0], self.lon[0]))
-#     # print("lat1: {}, lon1: {}".format(self.lat[1], self.lon[1]))
-#     # print("lat max - lat min:", self.lat.max()-self.lat.min())
-#     # print("lon max - lon min:", self.lon.max()-self.lon.min())
-#     # print("lat 1 - lat 0:", self.lat[1]-self.lat[0])
-#     # print("lon 1 - lon 0:", self.lon[1]-self.lon[0])
+
+
+from PyQt5.QtCore import QObject, pyqtSignal
+from threading import Thread
+from time import sleep, time
+from numpy import ndarray
+
+class CameraCapture(QObject):
+    newImg = pyqtSignal(ndarray)
+    def __init__(self, name, fps):
+        super(CameraCapture, self).__init__()
+        self.name = name
+        self.waitingTime = 1.0/fps
+        self.on = False
+        self.running = False
+    def _reader(self):
+        self.running = True
+        self.cap = VideoCapture(self.name)
+        ts = time()
+        while self.on:
+            ret, frame = self.cap.read()
+            if not ret: continue
+            tsTmp = time()
+            if tsTmp-ts > self.waitingTime:
+                ts = tsTmp
+                self.newImg.emit(frame)
+            sleep(0.001)
+        self.running = False
+
+    def start(self):
+        if self.on: return
+        self.on = True
+        t = Thread(target=self._reader)
+        t.daemon = True
+        t.start()
+    
+    def stop(self):
+        if not self.running: return
+        self.on = False
+        while self.running: sleep(0.001)
+        self.cap.release()
+
+    def isOpened(self):
+        return self.cap.isOpened()

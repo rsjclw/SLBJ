@@ -6,17 +6,17 @@
 #include <unordered_set>
 #include "utils.hpp"
 using namespace std;
-using namespace cv;
 bool on;
 int c=0;
 TCPServer *tcp;
 World *w;
-Mat mapMask;
 ShipsMap *ships;
 SBoatsMap *sboats;
 GCSMap *gcs;
 fdsMap *fds;
+Globe *globe;
 int typeLength;
+int LATMAXIDX, LONMAXIDX;
 unsigned int numDetachedThread = 0;
 mutex mtxNumDetachedThread, mtxShips, mtxSBoats;
 
@@ -41,8 +41,8 @@ void searchShip(string boatID, int fd){
     double lat = (*sboats)[boatID].lat;
     double lon = (*sboats)[boatID].lon;
     mtxSBoats.unlock();
-    int latIdx = latToIndex(lat);
-    int lonIdx = lonToIndex(lon);
+    int latIdx = globe->latToIndex(lat);
+    int lonIdx = globe->lonToIndex(lon);
     int nextIdx;
     bool found = false;
     mtxShips.lock();
@@ -62,24 +62,25 @@ void searchShip(string boatID, int fd){
         node = pq->top(); pq->pop();
         latIdx = node.second.first;
         lonIdx = node.second.second;
-        lat = latIndextoLat(latIdx);
-        lon = lonIndextoLon(lonIdx);
+        lat = globe->latIndextoLat(latIdx);
+        lon = globe->lonIndextoLon(lonIdx);
         pos = make_pair(latIdx, lonIdx);
+        
         if(wCopy.find(pos) != wCopy.end()){
             saverID = wCopy[pos];
             found = true;
             break;
         }
-        // if(!mapMask.at<unsigned char>(latIdx, lonIdx)) { // if daratan
+        // if(!globe->mapMask.at<unsigned char>(latIdx, lonIdx)) { // if daratan
         //     found = true;
         //     break;
         // }
         
         nextIdx = (latIdx+1)%LATMAXIDX; // atas
         posTemp = make_pair(nextIdx, lonIdx);
-        if(visited.find(posTemp) == visited.end() && mapMask.at<unsigned char>(nextIdx, lonIdx)){
+        if(visited.find(posTemp) == visited.end() && globe->mapMask.at<unsigned char>(nextIdx, lonIdx)){
             // if not land
-            d = node.first+getDistance(latIndextoLat(nextIdx), lon, lat, lon);
+            d = node.first+getDistance(globe->latIndextoLat(nextIdx), lon, lat, lon);
             if(d < maxRange) {
                 visited.insert(posTemp);
                 pq->push(make_pair(d, posTemp));
@@ -88,9 +89,9 @@ void searchShip(string boatID, int fd){
 
         nextIdx = (lonIdx+1)%LONMAXIDX; // kanan
         posTemp = make_pair(latIdx, nextIdx);
-        if(visited.find(posTemp) == visited.end() && mapMask.at<unsigned char>(latIdx, nextIdx)){
+        if(visited.find(posTemp) == visited.end() && globe->mapMask.at<unsigned char>(latIdx, nextIdx)){
             // if not land
-            d = node.first+getDistance(lat, lonIndextoLon(nextIdx), lat, lon);
+            d = node.first+getDistance(lat, globe->lonIndextoLon(nextIdx), lat, lon);
             if(d < maxRange){
                 visited.insert(posTemp);
                 pq->push(make_pair(d, posTemp));
@@ -100,9 +101,9 @@ void searchShip(string boatID, int fd){
         if(latIdx > 0)nextIdx = latIdx-1; // bawah
         else nextIdx = LATMAXIDX-1;
         posTemp = make_pair(nextIdx, lonIdx);
-        if(visited.find(posTemp) == visited.end() && mapMask.at<unsigned char>(nextIdx, lonIdx)){
+        if(visited.find(posTemp) == visited.end() && globe->mapMask.at<unsigned char>(nextIdx, lonIdx)){
             // if not land
-            d = node.first+getDistance(latIndextoLat(nextIdx), lon, lat, lon);
+            d = node.first+getDistance(globe->latIndextoLat(nextIdx), lon, lat, lon);
             if(d < maxRange) {
                 visited.insert(posTemp);
                 pq->push(make_pair(d, posTemp));
@@ -112,9 +113,9 @@ void searchShip(string boatID, int fd){
         if(lonIdx > 0) nextIdx = lonIdx-1; // kiri
         else nextIdx = LONMAXIDX-1;
         posTemp = make_pair(latIdx, nextIdx);
-        if(visited.find(posTemp) == visited.end() && mapMask.at<unsigned char>(lonIdx, nextIdx)){
+        if(visited.find(posTemp) == visited.end() && globe->mapMask.at<unsigned char>(latIdx, nextIdx)){
             // if not land
-            d = node.first+getDistance(lat, lonIndextoLon(nextIdx), lat, lon);
+            d = node.first+getDistance(lat, globe->lonIndextoLon(nextIdx), lat, lon);
             if(d < maxRange){
                 visited.insert(posTemp);
                 pq->push(make_pair(d, posTemp));
@@ -134,41 +135,34 @@ void searchShip(string boatID, int fd){
             (*sboats)[boatID].saverLon = shipsCopy[(*sboats)[boatID].saver].lon;
         }
         else{
-            sprintf(message, "!!");
+            sprintf(message, "$!!");
         }
         mtxSBoats.unlock();
         // printf("%s\n", message);
         tcp->sendData(fd, message);
     }
     else mtxSBoats.unlock();
+    (*sboats)[boatID].searching = false;
     mtxNumDetachedThread.lock();
     numDetachedThread -= 1;
     mtxNumDetachedThread.unlock();
 }
 
-void sendBoatPos(int fd){
-
-}
-
 int main(){
-    mapMask = imread("mapmask.png", IMREAD_UNCHANGED);
-    // -4.309238, 111.901578 lifeboat di sini
-    // -6.533850, 106.800901 // darat
-    // 33.1234789, 123.1234567 // laut
-    // -18.750237, 80.757841
-    // -4.354310, 109.631127
-    // SBoat b;
-    // b.lat = -39.811377; b.lon = 20.061342; b.maxRange = 1000000;
-    // sboats["konti"] = b;
-    // printf("searching konti\n");
-    // searchShip("konti", 69);
-    // // printf("%d, %d: %d\n", latToIndex(33.1234789), lonToIndex(123.1234567), mapMask.at<unsigned char>(latToIndex(33.1234789), lonToIndex(123.1234567)));
-    // printf("done\n");
-    // return 0;
     on = true;
     signal(SIGINT, sigHandler);
-    string ip = "192.168.1.8";
-    tcp = new TCPServer(ip.c_str(), 6969);
+    {
+        FILE *fp;
+        char ip[16], globeCfg[500];
+        int port;
+        fp = fopen("server.cfg", "r");
+        fscanf(fp, "%s%d%s", ip, &port, globeCfg);
+        fclose(fp);
+        globe = new Globe(globeCfg);
+        LATMAXIDX = globe->getLatLen();
+        LONMAXIDX = globe->getLonLen();
+        tcp = new TCPServer(ip, port);
+    }
     tcp->start();
     w = new World;
     ships = new ShipsMap;
@@ -225,8 +219,8 @@ int main(){
             (*ships)[id].lat = latTemp;
             (*ships)[id].lon = lonTemp;
             if((*ships)[id].fd != fd) (*ships)[id].fd = fd;
-            latIndexTemp = latToIndex((*ships)[id].lat);
-            lonIndexTemp = lonToIndex((*ships)[id].lon);
+            latIndexTemp = globe->latToIndex((*ships)[id].lat);
+            lonIndexTemp = globe->lonToIndex((*ships)[id].lon);
             if(latIndexTemp != (*ships)[id].latIdx || lonIndexTemp != (*ships)[id].lonIdx){
                 (*w).erase(make_pair((*ships)[id].latIdx, (*ships)[id].lonIdx));
                 (*ships)[id].latIdx = latIndexTemp;
@@ -244,14 +238,19 @@ int main(){
             (*sboats)[id].lon = atof(token);
             token = strtok(NULL, splitter);
             if(token == NULL) continue;
-            (*sboats)[id].maxRange = atoi(token+1) * 1000;
+            (*sboats)[id].maxRange = atoi(token+1)*1000;
             if((*sboats)[id].fd != fd) (*sboats)[id].fd = fd;
             if((*sboats)[id].status != token[0]) (*sboats)[id].status = token[0];
             // printf("%.7lf, %.7lf, %d, %c\n", (*sboats)[id].lat, (*sboats)[id].lon, (*sboats)[id].maxRange, (*sboats)[id].status);
             if((*sboats)[id].status == '3'){ // 1 picking up jackets, 2: going to land, 3: going to ship
                 if((*sboats)[id].saver.size() > 0){
+                    for (auto q : *ships){
+                        cout << q.first << ", ";
+                    }
+                    cout << "<----->" << (*sboats)[id].saver << endl;
                     mtxShips.lock();
                     if((*ships).find((*sboats)[id].saver) != (*ships).end()){
+                        printf("test\n");
                         sprintf(message, "$%s;%.7lf;%.7lf", (*sboats)[id].saver.c_str(), (*ships)[(*sboats)[id].saver].lat, (*ships)[(*sboats)[id].saver].lon);
                         (*sboats)[id].saverLat = (*ships)[(*sboats)[id].saver].lat;
                         (*sboats)[id].saverLon = (*ships)[(*sboats)[id].saver].lon;
@@ -261,19 +260,16 @@ int main(){
                     else{
                         mtxShips.unlock();
                         (*sboats)[id].saver = "";
-                        (*sboats)[id].saverLat = (*ships)[(*sboats)[id].saver].lat;
-                        (*sboats)[id].saverLon = (*ships)[(*sboats)[id].saver].lon;
-                        sprintf(message, "!!");
-                        tcp->sendData(fd, message);
+                        if(!(*sboats)[id].searching){
+                            (*sboats)[id].searching = true;
+                            (*sboats)[id].timestamp = ts.tv_sec;
+                            thread t(searchShip, id, fd);
+                            t.detach();
+                        }
                     }
                 }
-                else{
-                    sprintf(message, "!!");
-                    tcp->sendData(fd, message);
-                }
-            }
-            else if((*sboats)[id].status == '4'){ // 4: request ship for help
-                if(ts.tv_sec - (*sboats)[id].timestamp > minRequestDelay){
+                else if(ts.tv_sec - (*sboats)[id].timestamp > minRequestDelay && !(*sboats)[id].searching){
+                    (*sboats)[id].searching = true;
                     (*sboats)[id].timestamp = ts.tv_sec;
                     thread t(searchShip, id, fd);
                     t.detach();
@@ -282,7 +278,7 @@ int main(){
         }
         else if(clientType.compare("GCSt") == 0){
             if((*gcs).find(id) == (*gcs).end()) (*gcs)[id].init(id, sboats, tcp, &mtxSBoats);
-            if((*gcs)[id].fd) (*gcs)[id].fd = fd;
+            if((*gcs)[id].fd != fd) (*gcs)[id].fd = fd;
             token = strtok(NULL, splitter);
             if(token == NULL) continue;
             char task = token[0];
@@ -299,6 +295,7 @@ int main(){
                 }
             }
         }
+        usleep(100);
     }
     while(numDetachedThread>0);
     delete w;
@@ -306,6 +303,7 @@ int main(){
     delete ships;
     delete sboats;
     delete fds;
+    delete globe;
     delete tcp;
     cout << "done\n";
     return 0;

@@ -3,8 +3,9 @@ from PyQt5.QtCore import Qt, QPoint
 from PyQt5.QtWidgets import QWidget
 from PyQt5.QtGui import QPainter, QBrush, QColor
 from PyQt5.QtCore import pyqtSignal, QThread, QTimer
-from utils import convertToQPixmap, Globe
+from utils import convertToQPixmap
 from cv2 import imread
+from copy import copy
 import random
 
 class Map(QWidget):
@@ -14,9 +15,8 @@ class Map(QWidget):
         self.timer = QTimer()
         self.timer.timeout.connect(self.__update)
         self.timer.start(50)
-        self.globe = Globe("danau8map.npz")
-        self.boats = []
-        self.boatsTemp = []
+        self.boats = {}
+        self.selectedBoat = ""
 
     def __update(self):
         self.update()
@@ -27,13 +27,19 @@ class Map(QWidget):
         self.painter.setPen(QColor("green"))
         self.painter.setBrush(QColor("green"))
         for boat in self.boats:
-            self.painter.drawEllipse(QPoint(boat[2], boat[1]), 5, 5)
+            if self.boats[boat][0] == self.selectedBoat:
+                self.painter.setBrush(QColor("blue"))
+                self.painter.drawEllipse(QPoint(self.boats[boat][1], self.boats[boat][0]), 7, 7)
+                self.painter.setBrush(QColor("green"))
+            else: self.painter.drawEllipse(QPoint(self.boats[boat][1], self.boats[boat][0]), 5, 5)
         self.painter.drawEllipse(QPoint(int(random.uniform(0, 415)), int(random.uniform(0, 631))), 2, 2)
         self.painter.end()
     
-    def updatePos(self, boatID, lat, lon, saverLat, saverLon):
-        if boatID == "$!!":
-            self.boats = self.boatsTemp
-            self.boatsTemp = []
-        else:
-            self.boatsTemp.append((boatID, self.globe.latToIndex(lat), self.globe.lonToIndex(lon), self.globe.latToIndex(saverLat), self.globe.lonToIndex(saverLon)))
+    def updatePos(self, boats):
+        self.boats = copy(boats)
+    
+    def selectBoat(self, boatID):
+        self.selectedBoat = boatID
+    
+    def getBoats(self):
+        return self.boats

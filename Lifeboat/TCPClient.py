@@ -8,6 +8,9 @@ class TCPClient():
         self.connecting = False
         if ip is not None and port is not None:
             self.connect(ip, port)
+    
+    def __del__(self):
+        self.disconnect()
 
     def read(self):
         if not self.connected: return None

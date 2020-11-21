@@ -6,20 +6,16 @@
 #include <boost/functional/hash.hpp>
 #include <sys/time.h>
 #include <thread>
+#include <opencv2/highgui/highgui.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/imgcodecs/imgcodecs.hpp>
 #include "TCPServer.hpp"
 #define R 6371e3 // meter
 #define M_PI 3.14159265358979323846
-#define LATMAX 90.0
-#define LONMAX 179.99166666666667
-#define LATMIN -89.99166666666667
-#define LONMIN -180.0
-#define DLAT -0.008333333333339965
-#define DLON 0.008333333333325754
-#define LATMAXIDX 21600
-#define LONMAXIDX 43200
 // total pixel: 933120000
 
 using namespace std;
+using namespace cv;
 
 typedef struct{
     double lat, lon;
@@ -30,6 +26,7 @@ typedef struct{
     double lat, lon, saverLat, saverLon;
     char status;
     int fd;
+    bool searching;
     unsigned int maxRange;
     string saver;
     time_t timestamp;
@@ -86,13 +83,15 @@ class GCS{
     mutex mtxUpdate;
     mutex *mtxSBoats;
     void __updateData(){
+        this->mtxSBoats->lock();
         SBoatsMap sboatsTemp = *sboats;
+        this->mtxSBoats->unlock();
         char msg[256];
-        for (auto i : *this->sboats){
+        for (auto i : sboatsTemp){
             if(this->deleting) break;
-            sprintf(msg, "$%s;%.7lf;%.7lf;%.7lf;%.7lf", i.first.c_str(), i.second.lat, i.second.lon, i.second.saverLat, i.second.saverLon);
+            sprintf(msg, "$%s;%.7lf;%.7lf;%.7lf;%.7lf;%c", i.first.c_str(), i.second.lat, i.second.lon, i.second.saverLat, i.second.saverLon, i.second.status);
             this->tcp->sendData(fd, msg);
-            usleep(100);
+            usleep(1);
         }
         sprintf(msg, "$!!");
         this->tcp->sendData(fd, msg);
@@ -128,21 +127,48 @@ double getDistance(double lat0, double lon0, double lat1, double lon1){
     return R*(2 * atan2(sqrt(a), sqrt(1-a)));
 }
 
-int latToIndex(double lat){
-    return (int)((lat-LATMAX)/DLAT);
-}
+class Globe{
+    public:
+    Mat mapMask;
+    Globe(string path){
+        FILE *fp;
+        char buff[255];
+        fp = fopen(path.c_str(), "r");
+        fscanf(fp, "%s%lf%lf%lf%lf%d%d", buff, &this->latMax, &this->lonMax,
+        &this->latMin, &this->lonMin, &this->latLen, &this->lonLen);
+        fclose(fp);
+        this->mapMask = imread(buff, IMREAD_UNCHANGED);
+        this->dlat = -(this->latMax-this->latMin)/(double)(this->latLen-1);
+        this->dlon = (this->lonMax-this->lonMin)/(double)(this->lonLen-1);
+    }
 
-int lonToIndex(double lon){
-    return (int)((lon-LONMIN)/DLON);
-}
+    int latToIndex(double lat){
+        return (int)((lat-this->latMax)/this->dlat);
+    }
 
-double latIndextoLat(int latIndex){
-    return ((double)latIndex)*DLAT+LATMAX;
-}
+    int lonToIndex(double lon){
+        return (int)((lon-this->lonMin)/this->dlon);
+    }
 
-double lonIndextoLon(int lonIndex){
-    return ((double)lonIndex)*DLON+LONMIN;
-}
+    double latIndextoLat(int latIndex){
+        return ((double)latIndex)*this->dlat+this->latMax;
+    }
+
+    double lonIndextoLon(int lonIndex){
+        return ((double)lonIndex)*this->dlon+this->lonMin;
+    }
+
+    int getLatLen(){
+        return this->latLen;
+    }
+
+    int getLonLen(){
+        return this->lonLen;
+    }
+    private:
+    double latMax, latMin, lonMax, lonMin, dlat, dlon;
+    int latLen, lonLen;
+};
 
 const char splitter[2] = ";";
 char buff8[9];

@@ -47,7 +47,7 @@ int main(int argc, char const *argv[])
 { 
 	int sock = 0, valread; 
 	struct sockaddr_in serv_addr; 
-	char hello[70] = "$SHIP02\0"; 
+	char hello[70] = "$SHIP4\0"; 
 	char buffer[256];
 	if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) 
 	{ 
@@ -59,7 +59,7 @@ int main(int argc, char const *argv[])
 	serv_addr.sin_port = htons(PORT); 
 	
 	// Convert IPv4 and IPv6 addresses from text to binary form 
-	if(inet_pton(AF_INET, "192.168.1.9", &serv_addr.sin_addr)<=0) 
+	if(inet_pton(AF_INET, "10.181.15.202", &serv_addr.sin_addr)<=0) 
 	{ 
 		printf("\nInvalid address/ Address not supported \n"); 
 		return -1; 
@@ -72,7 +72,8 @@ int main(int argc, char const *argv[])
 	}
 	srand(time(NULL));
     while(true){
-		sprintf(buffer, "%s;%.7lf;%.7lf", hello, (double)rand()/RAND_MAX*180.0-90.0, (double)rand()/RAND_MAX*360.0-180.0);
+		sprintf(buffer, "%s;%.7lf;%.7lf", hello, -55.087303, 71.871048);// -53.250059, 88.034014, -51.993243, 72.138205
+		// sprintf(buffer, "%s;%.7lf;%.7lf", hello, (double)rand()/RAND_MAX*180.0-90.0, (double)rand()/RAND_MAX*360.0-180.0);
         if(send(sock , buffer , strlen(buffer) , 0 ) < 1) break;
         printf("%s -- message sent\n", buffer); 
 		memset(buffer, 0, sizeof(buffer));

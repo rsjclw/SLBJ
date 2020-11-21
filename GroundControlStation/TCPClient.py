@@ -4,7 +4,7 @@ from time import sleep, time
 from numpy import copy
 
 class TCPClient(QObject):
-    setPos = pyqtSignal(str, float, float, float, float)
+    setPos = pyqtSignal(str, float, float, float, float, str)
     def __init__(self, ID, ip=None, port=None, parent=None):
         super(TCPClient, self).__init__()
         self.connected = False
@@ -34,16 +34,16 @@ class TCPClient(QObject):
             try:
                 data = self.read()
                 # if data != None: print(data)
-                if data == "$!!": t = time()-0.5
+                if data == "$!!": t = time()-0.8
                 else:
                     data = data.split(";")
-                    if len(data) == 5: self.setPos.emit(data[0], float(data[1]), float(data[2]), float(data[3]), float(data[4]))
+                    if len(data) == 6: self.setPos.emit(data[0], float(data[1]), float(data[2]), float(data[3]), float(data[4]), data[5])
             except: pass
             if (time()-t) >= 1:
                 t = time()
                 try: self.socket.send(msg0)
                 except: pass
-                self.setPos.emit('$!!', 0, 0, 0, 0)
+                self.setPos.emit('$!!', 0, 0, 0, 0, "0")
         self.running = False
 
     def read(self):
