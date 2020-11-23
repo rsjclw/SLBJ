@@ -24,13 +24,11 @@ class Boat(QObject):
         if serialName != None:
             self.serialConnected = True
             try: self.serialConn = Serial(serialName, 115200, timeout=0)
-            except Exception as e:
-                print("aswww")
-                self.serialConnected = False
-        print(self.serialConnected, "1312312312321312")
+            except Exception as e: self.serialConnected = False
         if serverIP != None and serverPort != None: self.tcpConn.connect(serverIP, serverPort)
         if jktServerIP != None and jktServerPort != None: self.tcpJkt.connect(jktServerIP, jktServerPort)
-        print(self.tcpConn.isConnected(), self.tcpJkt.isConnected())
+        if not self.serialConnected: print("Cannot connect to serial port")
+        if not self.tcpJkt.isConnected(): print("Cannot connect to Lifejacket Server")
         self.on = False
         t = Thread(target=self.__tcpRun)
         t.daemon = True
@@ -151,8 +149,8 @@ class Boat(QObject):
         serialData = self.serialConn.read(self.serialConn.in_waiting)
         if len(serialData) == 0: return
         try: serialData = serialData.decode('ascii')
-        except: print("asd");return
-        print(serialData)
+        except: return
+        # print(serialData)
         startIdx = 0
         idxA = -1
         if self.serialDataStartFlag == False:
@@ -166,7 +164,7 @@ class Boat(QObject):
             if idxB != -1:
                 self.serialData += serialData[startIdx: idxB]
                 self.serialDataStartFlag = False
-                self.serialData = (serialData[startIdx:idxB]).split(';')
+                self.serialData = self.serialData.split(';')
                 if len(self.serialData) == 3:
                     # print(self.serialData)
                     try: tempLat = float(self.serialData[0])

@@ -115,3 +115,6 @@ class MainWindow(QMainWindow):
             self.pushButton_stop.setText("START")
             self.boatpaused = True
             self.boat.pause()
+    
+    def resizeEvent(self, e):
+        self.scrollArea.resize(self.frameGeometry().width(), self.frameGeometry().height()-30)
