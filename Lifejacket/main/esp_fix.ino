@@ -107,6 +107,7 @@ void loop()
     }
   } 
   sprintf(message, "$JCKT;%s;%s", lat_str, lon_str);
+  SendData.available();
 //  lat += 0.01;
 //  lon += 0.01;
   delay(500);
