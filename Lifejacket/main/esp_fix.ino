@@ -1,19 +1,24 @@
-#include <TinyGPS++.h>
+ #include <TinyGPS++.h>
 #include <HardwareSerial.h>
 #include <Wire.h>               
 
 float latitude , longitude;
 char lat_str[16], lon_str[16];
-
+bool startFlag=0;
+int serialIdx;
+char serialData[100];
+char serialTemp;
 const uint16_t port = 6900;
 const char *suicideFlag = "$!!";
 char message[256];
 unsigned long t;
 int i, b;
-double lat = -9.726921, lon = 114.563657;
+//double lat = -9.726921, lon = 114.563657;
 
-TinyGPSPlus gps;
-HardwareSerial SerialGPS(2);
+//TinyGPSPlus gps;
+//HardwareSerial SerialGPS(2);
+//
+//HardwareSerial SendData(1);
 
 
 
@@ -86,31 +91,24 @@ void assignDouble(char *buff, double value, int places) {
 void setup()
 {
   Serial.begin(115200);
-  SerialGPS.begin(9600, SERIAL_8N1, 16, 17);
+//  SerialGPS.begin(9600, SERIAL_8N1, 16, 17);
+//  SendData.begin(115200, SERIAL_8N1, 9, 10);
 }
 
 void loop()
 {
-
-  while (SerialGPS.available() > 0) {
-    if (gps.encode(SerialGPS.read()))
-    {
-      if (gps.location.isValid())
-      {
-        assignDouble(lat_str, gps.location.lat(), 8);
-        assignDouble(lon_str, gps.location.lng(), 8);
-  //        Serial.print("Latitude = ");
-  //        Serial.println(lat_str);
-  //        Serial.print("Longitude = ");
-  //        Serial.println(lng_str);
-      }
-    }
-  } 
+//  while (SerialGPS.available() > 0) {
+//    gps.encode(SerialGPS.read());
+//  } 
+//  if (gps.location.isValid()){
+//    assignDouble(lat_str, gps.location.lat(), 8);
+//    assignDouble(lon_str, gps.location.lng(), 8);
+//  }
   sprintf(message, "$JCKT;%s;%s", lat_str, lon_str);
-  SendData.available();
+//  SendData.print(message);
+  Serial.print(message);
 //  lat += 0.01;
 //  lon += 0.01;
   delay(500);
 
   }
-
