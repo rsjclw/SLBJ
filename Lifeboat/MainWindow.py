@@ -18,33 +18,31 @@ class MainWindow(QMainWindow):
     def __init__(self, parent=None):
         super(MainWindow, self).__init__()
         uic.loadUi("MainWindow.ui", self)
-        # self.p = Process(target=self.runServer)
-        # self.p.daemon = True
-        # self.p.start()
         f = open("lifeboat.cfg", "r")
         self.boatThread = QThread()
         boatID = int((f.readline()).replace("\n", ""))
-        # boatID = int(random.uniform(10,99))
         globeMapPath = (f.readline()).replace("\n", "")
         serialName = (f.readline()).replace("\n", "")
         cameraName = int((f.readline()).replace("\n", ""))
         serverIP = (f.readline()).replace("\n", "")
         serverPort = int((f.readline()).replace("\n", ""))
-        serverJktIP = (f.readline()).replace("\n", "")
-        serverJktPort = int((f.readline()).replace("\n", ""))
+        jktSerialName = (f.readline()).replace("\n", "")
         f.close()
 
-        self.boat = Boat(boatID, globeMapPath, serialName, serverIP, serverPort, serverJktIP, serverJktPort)
+        self.boat = Boat(boatID, globeMapPath, serialName, serverIP, serverPort, jktSerialName)
         self.boat.moveToThread(self.boatThread)
         self.boatpaused = False
 
         self.mapSize = (1296, 648) # (416, 632)
         self.widget_Map.setMapImgSize(self.mapSize)
         self.widget_Map.setMap(self.boat.globe.mask)
+        self.widget_Map.setBlankMapImage(np.full((self.mapSize[1], self.mapSize[0], 3), fill_value=255, dtype=np.uint8))
 
         self.cap = CameraCapture(cameraName, 20)
         self.cameraOn = False
+        self.worldMap = not False
         self.label_camera.setVisible(False)
+        self.switchMap()
 
         self.initUIConnection()
 
@@ -77,6 +75,8 @@ class MainWindow(QMainWindow):
         self.boat.updateBoat.connect(self.widget_Map.updateLifeboat)
         self.boat.updateDest.connect(self.widget_Map.updateDest)
         self.boat.updateStatus.connect(self.lineEdit_status.setText)
+
+        self.pushButton_mapSwitch.clicked.connect(self.switchMap)
         
     
     def handleCustomPos(self):
@@ -89,7 +89,6 @@ class MainWindow(QMainWindow):
     def closeEvent(self, e):
         self.boat.stop()
         self.cap.stop()
-
     
     def switchCamera(self):
         if self.cameraOn:
@@ -102,6 +101,16 @@ class MainWindow(QMainWindow):
             self.cap.start()
             self.label_camera.setVisible(True)
             self.cameraOn = True
+    
+    def switchMap(self):
+        if self.worldMap:
+            self.pushButton_mapSwitch.setText("World Map")
+            self.worldMap = False
+        else:
+            self.pushButton_mapSwitch.setText("Local Map")
+            self.worldMap = True
+        self.widget_Map.setWorldMap(self.worldMap)
+        self.boat.setWorldMapFlag(self.worldMap)
     
     def updateCamFrame(self, img):
         self.label_camera.setPixmap(convertToQPixmap(img))

@@ -3,7 +3,7 @@ from PyQt5.QtCore import Qt, QPoint
 from PyQt5.QtWidgets import QWidget
 from PyQt5.QtGui import QPainter, QBrush, QColor
 from PyQt5.QtCore import pyqtSignal, QThread, QTimer
-from utils import convertToQPixmap
+from utils import convertToQPixmap, getGreatCircleDistance, degree2rad
 from cv2 import imread, IMREAD_UNCHANGED, cvtColor, COLOR_GRAY2BGR, resize
 from copy import copy
 import random
@@ -25,12 +25,15 @@ class Map(QWidget):
         self.moveFactor = 0.1
         self.mapShape = (1, 1)
         self.mapRect = (0, 0, 0, 0)
+        self.worldMapFLag = True
+        self.oneKMLat = 0.008996
     
     def __update(self):
         self.update()
     
     def setMap(self, mask):
         self.background = mask
+        print(self.background.shape)
         self.mapShape = (self.background.shape[0]-1, self.background.shape[1]-1)
         self.moveCenter()
 
@@ -46,15 +49,34 @@ class Map(QWidget):
         self.painter.drawPixmap(0,0,self.outBackground)
         self.painter.setPen(QColor("black"))
         self.painter.setBrush(QColor("light blue"))
-        self.painter.drawEllipse(self.normalizePoint(self.lifeboat[1], self.lifeboat[0]), 6, 6)
+        if self.worldMapFLag:
+            self.painter.drawEllipse(self.normalizePoint(self.lifeboat[1], self.lifeboat[0]), 6, 6)
+            self.painter.setBrush(QColor("green"))
+            self.painter.drawEllipse(self.normalizePoint(self.dest[1], self.dest[0]), 5, 5)
+            self.painter.setBrush(QColor("red"))
+            for key in self.Lifejackets:
+                self.painter.drawEllipse(self.normalizePoint(self.Lifejackets[key][1], self.Lifejackets[key][0]), 4, 4)
 
-        self.painter.setBrush(QColor("green"))
-        self.painter.drawEllipse(self.normalizePoint(self.dest[1], self.dest[0]), 5, 5)
+        else:
+            xmid = int(self.mapImgSize[0]/2)
+            ymid = int(self.mapImgSize[1]/2)
+            self.painter.drawEllipse(QPoint(xmid, ymid), 6, 6)
+            self.painter.setBrush(QColor("red"))
+            # 0.008996 lat = 1km
+            topLat = self.lifeboat[0] - self.oneKMLat
+            botLat = self.lifeboat[0] + self.oneKMLat
+            if topLat < -90: topLat = -topLat - 180
+            if botLat > 90: botLat = -botLat + 180
+            if abs(topLat) > abs(botLat): minAbsLat = degree2rad(botLat)
+            else: minAbsLat = degree2rad(topLat)
+            twoKMLon = 2/(getGreatCircleDistance(minAbsLat, 0, minAbsLat, 0.017453292519943295)/1000)
+            for key in self.Lifejackets:
+                dlat = self.lifeboat[0]-self.Lifejackets[key][0]
+                dlon = self.Lifejackets[key][1]-self.lifeboat[1]
+                y = ymid+int(dlat/self.oneKMLat*ymid)
+                x = xmid+int(dlon/twoKMLon*xmid)
+                self.painter.drawEllipse(QPoint(x, y), 4, 4) # edit here
 
-        self.painter.setBrush(QColor("red"))
-        for key in self.Lifejackets:
-            self.painter.drawEllipse(self.normalizePoint(self.Lifejackets[key][1], self.Lifejackets[key][0]), 4, 4)
-            
         self.painter.drawEllipse(self.normalizePoint(random.uniform(0, 43200), random.uniform(0, 21600)), 2, 2)
         self.painter.end()
     
@@ -73,8 +95,12 @@ class Map(QWidget):
     def setMapImage(self):
         self.outBackground = convertToQPixmap(cvtColor(resize(self.background[self.mapRect[0]:self.mapRect[2],
         self.mapRect[1]:self.mapRect[3]], self.mapImgSize), COLOR_GRAY2BGR)*255)
+    
+    def setBlankMapImage(self, img):
+        self.blankMapImage = convertToQPixmap(img)
 
     def moveMapImg(self, moveRight, moveDown):
+        if not self.worldMapFLag: return
         self.mapRect[0] += moveDown
         self.mapRect[1] += moveRight
         self.mapRect[2] += moveDown
@@ -101,6 +127,7 @@ class Map(QWidget):
         self.setMapImage()
     
     def zoom(self, factor):
+        if not self.worldMapFLag: return
         newScale = self.zoomScale*factor
         if newScale >= 1: newScale = 1
         elif newScale <= 0.002: newScale = 0.002
@@ -132,6 +159,12 @@ class Map(QWidget):
         self.moveMapImg(0, int(self.moveFactor*(self.mapRect[2]-self.mapRect[0])))
     
     def moveCenter(self):
+        if not self.worldMapFLag: return
         self.mapRect = [0, 0, self.mapShape[0], self.mapShape[1]]
         self.zoomScale = 1.0
         self.setMapImage()
+    
+    def setWorldMap(self,flag):
+        self.worldMapFLag = flag
+        if self.worldMapFLag: self.setMapImage()
+        else: self.outBackground = self.blankMapImage

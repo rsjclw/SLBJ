@@ -491,6 +491,24 @@
           </property>
          </widget>
         </widget>
+        <widget class="QPushButton" name="pushButton_mapSwitch">
+         <property name="geometry">
+          <rect>
+           <x>360</x>
+           <y>700</y>
+           <width>121</width>
+           <height>25</height>
+          </rect>
+         </property>
+         <property name="font">
+          <font>
+           <pointsize>9</pointsize>
+          </font>
+         </property>
+         <property name="text">
+          <string>World Map</string>
+         </property>
+        </widget>
        </widget>
       </item>
      </layout>

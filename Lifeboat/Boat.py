@@ -1,6 +1,6 @@
 from PyQt5.QtCore import QObject, pyqtSignal
 import numpy as np
-from utils import Globe, Control, getGreatCircleDistance
+from utils import Globe, Control
 from datetime import datetime
 from serial import Serial
 from threading import Thread, Lock
@@ -14,25 +14,25 @@ class Boat(QObject):
     updateDest = pyqtSignal(tuple)
     updateStatus = pyqtSignal(str)
     running = 0
-    def __init__(self, boatID_, globeMap, serialName=None, serverIP=None, serverPort=None, jktServerIP=None, jktServerPort=None):
+    def __init__(self, boatID_, globeMap, serialName=None, serverIP=None, serverPort=None, jktSerialName=None):
         super(Boat, self).__init__()
         self.globe = Globe(globeMap)
         self.boatID = boatID_
         self.serialConnected = False
+        self.jktSerialConnected = False
         self.tcpConn = TCPClient()
-        self.tcpJkt = TCPClient()
         if serialName != None:
             self.serialConnected = True
             try: self.serialConn = Serial(serialName, 115200, timeout=0)
             except Exception as e: self.serialConnected = False
+        if jktSerialName != None :
+            self.jktSerialConnected = True
+            try: self.jktSerialConn = Serial(serialName, 115200, timeout=0)
+            except Exception as e: self.jktSerialConnected = False
         if serverIP != None and serverPort != None: self.tcpConn.connect(serverIP, serverPort)
-        if jktServerIP != None and jktServerPort != None: self.tcpJkt.connect(jktServerIP, jktServerPort)
         if not self.serialConnected: print("Cannot connect to serial port")
-        if not self.tcpJkt.isConnected(): print("Cannot connect to Lifejacket Server")
+        if not self.jktSerialConnected: print("Cannot connect to Lifejacket Server")
         self.on = False
-        t = Thread(target=self.__tcpRun)
-        t.daemon = True
-        t.start()
         self.status = 1 # 1: picking up jackets, 2: going to land, 3: going to ship, 4: custom input
         self.lat = 0
         self.lon = 0
@@ -42,7 +42,9 @@ class Boat(QObject):
         self.destLon = None
         self.heading = 0
         self.serialData = ""
+        self.jktSerialData = ""
         self.serialDataStartFlag = False
+        self.jktSerialDataStartFlag = False
         self.nearestJkt = None
         self.nearestJktTemp = None
         self.nearestJktDistance = 20020001
@@ -61,6 +63,11 @@ class Boat(QObject):
         self.customInputPos = (0, 0)
         self.lastShipMsg = 0
         self.jktTime = 0
+        self.jktDataTimestamp = 0
+        self.worldMapFlag = False
+        t = Thread(target=self.__tcpRun)
+        t.daemon = True
+        t.start()
     
     def stop(self):
         self.on = False
@@ -80,13 +87,16 @@ class Boat(QObject):
         self.mtxJkt.release()
         return ret
     
+    def setWorldMapFlag(self, flag):
+        self.worldMapFlag = flag
+    
     def __tcpRun(self):
         self.on = True
         self.running += 1
         ts = time()
         while self.on:
             if self.tcpConn.isConnected(): self.__tcpHandler()
-            if self.tcpJkt.isConnected(): self.__tcpJktHandler()
+            if self.jktSerialConnected: self.__serialJktHandler()
             if self.serialConnected: self.__serialHandler()
             if time()-ts > 0.5:
                 self.tcpConn.send("$BOAT{};{};{};{}{}".format(self.boatID, self.lat, self.lon, self.status, self.maxRange))
@@ -115,38 +125,52 @@ class Boat(QObject):
         self.saverLon = float(data[2])
         if self.wait:
             self.setGotoShip()
-    
-    def __tcpJktHandler(self):
-        dataRaw = self.tcpJkt.read()
-        if dataRaw != None:
-            dataRaw = dataRaw.split("$")
-            for data in dataRaw:
-                if data == "!!": self.jktTime = time()-0.9
-                else:
-                    data = data.split(";")
-                    if len(data) != 3: continue
-                    self.jktTime = time()
-                    fd = int(data[0])
-                    lat = float(data[1])
-                    lon = float(data[2])
-                    d = getGreatCircleDistance(lat, lon, self.lat, self.lon)
-                    self.jktDictTemp[fd] = (self.globe.latToIndex(lat), self.globe.lonToIndex(lon))
-                    if self.nearestJktDistance > d:
-                        self.nearestJktTemp = (fd, lat, lon)
-                        self.nearestJktDistance = d
-        if time()-self.jktTime > 1:
-            self.jktTime = time()
-            self.tcpJkt.send(self.msg0)
-            self.updateJkt.emit(self.jktDictTemp)
-            self.mtxJkt.acquire()
-            self.nearestJkt = self.nearestJktTemp
-            self.mtxJkt.release()
-            self.jktLen = len(self.jktDictTemp)
+
+    def __serialJktHandler(self):
+        if time()-self.jktDataTimestamp > 5:
             self.jktDictTemp = {}
-            self.nearestJktDistance = 20020001
+            self.updateJkt.emit(self.jktDictTemp)
+            self.jktLen = 0
+        jktSerialData = self.jktSerialConn.read(self.jktSerialConn.in_waiting)
+        # jktSerialData = "$-54.607303;13.620126#".encode('ascii')
+        if len(jktSerialData) == 0: return
+        try: jktSerialData = jktSerialData.decode('ascii')
+        except: return
+        # print(jktSerialData)
+        startIdx = 0
+        idxA = -1
+        if self.jktSerialDataStartFlag == False:
+            idxA = jktSerialData.find('$')
+            if idxA != -1:
+                startIdx = idxA+1
+                self.jktSerialData = ""
+                self.jktSerialDataStartFlag = True
+        if self.jktSerialDataStartFlag == True:
+            idxB = jktSerialData.find('#', startIdx)
+            if idxB != -1:
+                self.jktSerialData += jktSerialData[startIdx: idxB]
+                self.jktSerialDataStartFlag = False
+                self.jktSerialData = self.jktSerialData.split(';')
+                if len(self.jktSerialData) == 2:
+                    # print(self.jktSerialData)
+                    try: lat = float(self.jktSerialData[0])
+                    except: return
+                    try: lon = float(self.jktSerialData[1])
+                    except: return
+                    if self.worldMapFlag: self.jktDictTemp[0] = (self.globe.latToIndex(lat), self.globe.lonToIndex(lon))
+                    else: self.jktDictTemp[0] = (lat, lon)
+                    self.updateJkt.emit(self.jktDictTemp)
+                    self.mtxJkt.acquire()
+                    self.nearestJkt = (0, lat, lon)
+                    self.mtxJkt.release()
+                    self.jktLen = len(self.jktDictTemp)
+                    self.jktDictTemp = {}
+            else:
+                self.jktSerialData += jktSerialData[startIdx:]
 
     def __serialHandler(self):
         serialData = self.serialConn.read(self.serialConn.in_waiting)
+        # serialData = "$-54.603021;13.619758;69#".encode('ascii')
         if len(serialData) == 0: return
         try: serialData = serialData.decode('ascii')
         except: return
@@ -175,8 +199,8 @@ class Boat(QObject):
                     except: tempHeading = self.heading
                     self.setBoatPos(tempLat, tempLon)
                     self.heading = tempHeading
-            elif idxA == -1:
-                self.serialData += serialData
+            else:
+                self.serialData += serialData[startIdx]
 
     def serialSend(self, message):
         if self.serialConnected: return self.serialConn.write(message.encode('ascii'))
@@ -228,7 +252,8 @@ class Boat(QObject):
     def setBoatPos(self, lat, lon):
         self.lat = lat
         self.lon = lon
-        self.updateBoat.emit((self.globe.latToIndex(lat), self.globe.lonToIndex(lon)))
+        if self.worldMapFlag: self.updateBoat.emit((self.globe.latToIndex(lat), self.globe.lonToIndex(lon)))
+        else: self.updateBoat.emit((lat, lon))
     
     def customInput(self):
         self.setDest(self.customInputPos)
@@ -325,7 +350,7 @@ class Boat(QObject):
                 message = "$0, 0#"
             elif self.wait or self.paused:
                 message = "$0, 0#"
-            else: message = "${} {}#".format(300, int(self.control.control(self.lat, self.lon, self.heading)))
+            else: message = "${} {}#".format(200, int(self.control.control(self.lat, self.lon, self.heading)))
             self.serialSend(message)
             sleep(0.01)
         self.running -= 1
