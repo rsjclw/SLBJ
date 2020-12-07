@@ -200,7 +200,7 @@ class Boat(QObject):
                     self.setBoatPos(tempLat, tempLon)
                     self.heading = tempHeading
             else:
-                self.serialData += serialData[startIdx]
+                self.serialData += serialData[startIdx:]
 
     def serialSend(self, message):
         if self.serialConnected: return self.serialConn.write(message.encode('ascii'))
